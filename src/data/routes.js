@@ -17,7 +17,19 @@ export const routeSchedule = {
   ],
 };
 
-export const allRouteIds = Array.from(
-  { length: routeSchedule.totalPublishedRoutes },
-  (_, index) => String(index + 1).padStart(2, '0'),
+// Page index for every route identifier published in the supplied schedule.
+// Selecting a route in the UI loads this exact source page, including all stops and times.
+const routePageGroups = [
+  [1, '01 02 03'], [2, '04 05 06 07'], [3, '08 09 10 11'], [4, '12 13 14'], [5, '15 16'],
+  [6, '21 22 23'], [7, '24 25 26'], [8, '27 28 29 30 31'], [9, '32 33 34'], [10, '36 37 38 39 40'],
+  [11, '41 42 43 44'], [12, '45 46 47 48'], [13, '49 50 51 52'], [14, '53 54'], [15, '55 60 61 62'],
+  [16, '64 65 66 67'], [17, '68 69 70 71'], [18, '72 73 74 75 76'], [19, '77 78 79 80'], [20, '81 82 83 84 85'],
+  [21, '86 89 90'], [22, '92 93 94 95'], [23, '96 97 98 99'], [24, '100 101 102 103'], [25, '87 88 125'],
+  [26, '107'], [27, '110 111 112'], [28, '113 114'], [29, '115 116 117'], [30, '121 124'], [31, '122 123 126 127'],
+];
+
+export const routePages = Object.fromEntries(
+  routePageGroups.flatMap(([page, routeIds]) => routeIds.split(' ').map((id) => [id, page])),
 );
+
+export const allRouteIds = Object.keys(routePages).sort((first, second) => Number(first) - Number(second));
