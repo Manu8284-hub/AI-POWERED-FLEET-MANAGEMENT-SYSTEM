@@ -1,0 +1,12 @@
+# FleetIQ — Python backend + model training
+# Pinned to the versions the persisted artifacts in backend/artifacts/ were
+# trained with. scikit-learn is pinned exactly because joblib pickles are
+# tied to the library version that created them.
+fastapi>=0.135
+uvicorn[standard]>=0.41
+scikit-learn==1.7.2
+pandas>=2.2
+numpy>=1.26,<2
+joblib>=1.4
+openpyxl>=3.1
+matplotlib>=3.8

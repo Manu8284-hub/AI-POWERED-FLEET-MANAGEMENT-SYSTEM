@@ -3,3 +3,21 @@ dist/
 .env
 .env.local
 *.log
+
+# Python / ML
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Trained model artifacts (regenerate with `npm run train`)
+backend/artifacts/
+*.joblib
+
+# Training EDA figures
+demand_model/*.png
+occupancy_model/*.png
+Bus_Stop_Clustering_Model/*.png
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json

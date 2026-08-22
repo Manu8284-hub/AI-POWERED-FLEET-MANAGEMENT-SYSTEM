@@ -3,3 +3,17 @@
 .route-pdf-note{font-size:10px;line-height:1.7;color:#71879a;margin:15px 0}
 .schedule-document{margin-top:18px;padding-top:14px;border-top:1px solid #e7edf1}.schedule-document>div{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.schedule-document .eyebrow{margin:0}.schedule-document iframe{display:block;width:100%;height:660px;border:1px solid #dce6ed;background:#f7fafc}
 @media(max-width:1050px){.stats{grid-template-columns:repeat(2,1fr)}.dashboard-grid,.lower-grid{grid-template-columns:1fr}.hero{grid-template-columns:1fr}.hero-art{display:none}}@media(max-width:720px){.app-shell{display:block}.sidebar{transform:translateX(-100%);transition:.2s;z-index:20}.sidebar.open{transform:translateX(0)}main{width:100%}.topbar{height:64px;padding:0 20px}.mobile-menu{display:block;border:0;background:transparent;font-size:18px}.breadcrumb{display:none}.date-button{display:none}.hero{padding:43px 23px;min-height:315px}.hero h1{font-size:38px}.stats,.dashboard-grid,.lower-grid{padding-left:18px;padding-right:18px}.stats{margin-top:-17px;gap:9px}.stats article{padding:13px;min-height:98px}.stat-icon{display:none}.dashboard-grid{padding-top:22px}.panel{padding:18px}.donut-wrap{justify-content:center}.recommendation{grid-template-columns:24px 1fr}.accept{grid-column:2;justify-self:start}.top-actions{gap:10px}.chart-key{margin-left:35px}.toast{left:18px;right:18px;bottom:18px}}
+/* Real-time / synced additions: global context pickers, live cluster dots, per-route ML chip, API-down banner */
+.context-picker{display:flex;flex-direction:column;gap:3px;font:500 8px 'DM Mono';letter-spacing:.6px;text-transform:uppercase;color:#8296a6}
+.context-picker select{border:1px solid var(--line);background:#f8fafb;color:#29455e;padding:6px 8px;font:600 11px Manrope;border-radius:3px;cursor:pointer;min-width:104px}
+.context-picker select:focus{outline:2px solid #cfe0f3}
+.api-banner{margin:0;padding:12px 44px;background:#fff0ed;color:#b23f34;font-size:11px;border-bottom:1px solid #f4d5cf}
+.api-banner code{background:#fff;border:1px solid #f0cfc8;padding:1px 5px;font:600 10px 'DM Mono';color:#a23328;margin:0 2px}
+.cluster-dot{position:absolute;width:10px;height:10px;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 2px 5px rgba(24,64,62,.35);border:1px solid rgba(255,255,255,.75)}
+.route-ml{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-top:14px;padding:13px;background:#f5f9fc;border:1px solid #e2ecf3}
+.route-ml div{display:grid;gap:4px}
+.route-ml span{font:500 8px 'DM Mono';letter-spacing:.6px;text-transform:uppercase;color:#8ca0b0}
+.route-ml b{font-size:16px;letter-spacing:-.5px;color:#1c3a55}
+.occ-low{color:#2a9d78}.occ-medium{color:#d69412}.occ-high{color:#e0554a}
+.recommendation.urgent{box-shadow:inset 3px 0 var(--coral)}
+@media(max-width:720px){.context-picker select{min-width:78px;font-size:10px;padding:5px 6px}.top-actions{gap:8px}}
