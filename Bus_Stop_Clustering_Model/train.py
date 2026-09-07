@@ -1,156 +1,303 @@
-"""Bus-stop clustering — groups stops into demand tiers with K-Means.
+"""
+Bus Stop Clustering Model
 
-Keeps the elbow + silhouette workflow, drops the constant `Unique_Routes`
-column, labels the three clusters High demand / Balanced / Emerging (A/B/C, to
-match the dashboard legend), and adds a PCA(2) projection so each stop gets a
-stable (x, y) the UI can plot. Everything the API serves is precomputed here
-into clusters.json.
+Clusters bus stops based on passenger demand, occupancy,
+delay, peak-hour activity, and route usage.
+
+The model uses the single master dataset:
+
+    fleet_master_combined_dataset.xlsx
+
+The master dataset contains multiple records for each stop,
+so we keep only one record per Stop_ID before clustering.
 """
 
 import json
 from pathlib import Path
-
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 import pandas as pd
 import joblib
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
+
+
+# ---------------------------------------------------------
+# Paths
+# ---------------------------------------------------------
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+
 ARTIFACTS = ROOT / "backend" / "artifacts"
 ARTIFACTS.mkdir(parents=True, exist_ok=True)
 
-# Drop `Unique_Routes` (constant = 1). Max_Passenger_Count adds peak signal.
+
+# ---------------------------------------------------------
+# Clustering features
+# ---------------------------------------------------------
+
 FEATURES = [
     "Avg_Passenger_Count",
     "Avg_Occupancy_Percentage",
     "Avg_Delay_Minutes",
     "Peak_Hour_Trips",
-    "Max_Passenger_Count",
-]
-N_CLUSTERS = 3
-# Rank clusters by average demand, then label highest -> lowest.
-RANKED_LABELS = [
-    {"letter": "A", "name": "High demand"},
-    {"letter": "B", "name": "Balanced"},
-    {"letter": "C", "name": "Emerging"},
+    "Max_Passenger_Count"
 ]
 
+
+# ---------------------------------------------------------
+# Main
+# ---------------------------------------------------------
 
 def main():
-    df = pd.read_excel(HERE / "Bus_Stop_Clustering_Dataset.xlsx")
-    print(df.head())
-    print(df.shape)
-    print(list(df.columns))
-    print("\nMissing values:\n", df.isnull().sum())
 
-    X = df[FEATURES]
+    # -----------------------------------------------------
+    # Load master dataset
+    # -----------------------------------------------------
+
+    dataset_path = ROOT / "fleet_master_combined_dataset.xlsx"
+
+    print("=" * 70)
+    print("Loading master fleet dataset")
+    print("=" * 70)
+
+    print(f"\nDataset: {dataset_path}")
+
+    df = pd.read_excel(dataset_path)
+
+    print(f"\nOriginal dataset shape: {df.shape}")
+    print(f"Original rows: {len(df)}")
+
+
+    # -----------------------------------------------------
+    # Keep one row per bus stop
+    # -----------------------------------------------------
+
+    df = df.drop_duplicates(
+        subset=["Stop_ID"]
+    ).copy()
+
+    print("\nAfter keeping one record per Stop_ID:")
+    print(f"Rows: {len(df)}")
+    print(f"Unique stops: {df['Stop_ID'].nunique()}")
+
+
+    # -----------------------------------------------------
+    # Check required columns
+    # -----------------------------------------------------
+
+    required_columns = [
+        "Stop_ID"
+    ] + FEATURES
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing required columns: {missing_columns}"
+        )
+
+
+    # -----------------------------------------------------
+    # Remove missing values
+    # -----------------------------------------------------
+
+    df = df.dropna(
+        subset=FEATURES
+    ).copy()
+
+    print(
+        f"\nRows after removing missing values: {len(df)}"
+    )
+
+
+    # -----------------------------------------------------
+    # Prepare feature matrix
+    # -----------------------------------------------------
+
+    X = df[FEATURES].copy()
+
+    print("\nClustering features:")
+
+    for feature in FEATURES:
+        print(f"  - {feature}")
+
+
+    # -----------------------------------------------------
+    # Scale features
+    # -----------------------------------------------------
+
     scaler = StandardScaler()
+
     X_scaled = scaler.fit_transform(X)
 
-    # Elbow curve (saved)
-    inertia = []
-    for k in range(2, 8):
-        km = KMeans(n_clusters=k, random_state=42, n_init=10).fit(X_scaled)
-        inertia.append(km.inertia_)
-    plt.figure()
-    plt.plot(range(2, 8), inertia, marker="o")
-    plt.xlabel("Number of Clusters")
-    plt.ylabel("Inertia")
-    plt.title("Elbow Method")
-    plt.tight_layout()
-    plt.savefig(HERE / "elbow.png", dpi=120)
-    plt.close()
 
-    kmeans = KMeans(n_clusters=N_CLUSTERS, random_state=42, n_init=10)
-    df["Cluster"] = kmeans.fit_predict(X_scaled)
+    # -----------------------------------------------------
+    # Find suitable number of clusters
+    # -----------------------------------------------------
 
-    score = float(silhouette_score(X_scaled, df["Cluster"]))
-    print("\nSilhouette Score:", round(score, 4))
-    print("Cluster distribution:\n", df["Cluster"].value_counts())
+    best_k = 2
+    best_score = -1
 
-    # Rank raw cluster ids by mean passenger count -> stable A/B/C labels.
-    order = (
-        df.groupby("Cluster")["Avg_Passenger_Count"].mean()
-        .sort_values(ascending=False).index.tolist()
+    max_k = min(6, len(df) - 1)
+
+    print("\n" + "=" * 70)
+    print("Testing different cluster counts")
+    print("=" * 70)
+
+    for k in range(2, max_k + 1):
+
+        model = KMeans(
+            n_clusters=k,
+            random_state=42,
+            n_init=10
+        )
+
+        labels = model.fit_predict(
+            X_scaled
+        )
+
+        score = silhouette_score(
+            X_scaled,
+            labels
+        )
+
+        print(
+            f"K = {k}  |  Silhouette Score = {score:.4f}"
+        )
+
+        if score > best_score:
+            best_score = score
+            best_k = k
+
+
+    print("\nBest number of clusters:", best_k)
+    print(
+        f"Best silhouette score: {best_score:.4f}"
     )
-    label_map = {int(cid): RANKED_LABELS[i] for i, cid in enumerate(order)}
 
-    # PCA(2) -> normalise to 0..100 so the UI can position stops directly.
-    pca = PCA(n_components=2, random_state=42)
-    coords = pca.fit_transform(X_scaled)
 
-    def norm(col):
-        lo, hi = col.min(), col.max()
-        return (col - lo) / (hi - lo) * 100 if hi > lo else col * 0 + 50
+    # -----------------------------------------------------
+    # Train final KMeans model
+    # -----------------------------------------------------
 
-    xs = norm(coords[:, 0])
-    ys = norm(coords[:, 1])
+    print("\nTraining final clustering model...")
 
-    stops = []
-    for i, row in df.reset_index(drop=True).iterrows():
-        lab = label_map[int(row["Cluster"])]
-        stops.append({
-            "stop_id": str(row["Stop_ID"]),
-            "stop_name": str(row["Stop_Name"]),
-            "cluster": int(row["Cluster"]),
-            "label": lab["letter"],
-            "label_name": lab["name"],
-            "x": round(float(xs[i]), 2),
-            "y": round(float(ys[i]), 2),
-            "avg_passengers": round(float(row["Avg_Passenger_Count"]), 2),
-            "avg_occupancy": round(float(row["Avg_Occupancy_Percentage"]), 2),
-        })
+    kmeans = KMeans(
+        n_clusters=best_k,
+        random_state=42,
+        n_init=10
+    )
 
-    summary = []
-    for cid in order:
-        grp = df[df["Cluster"] == cid]
-        lab = label_map[int(cid)]
-        summary.append({
-            "cluster": int(cid),
-            "label": lab["letter"],
-            "label_name": lab["name"],
-            "count": int(len(grp)),
-            "avg_passengers": round(float(grp["Avg_Passenger_Count"].mean()), 2),
-            "avg_occupancy": round(float(grp["Avg_Occupancy_Percentage"].mean()), 2),
-            "avg_delay": round(float(grp["Avg_Delay_Minutes"].mean()), 2),
-        })
-    print("\nCluster summary:")
-    for s in summary:
-        print(f"  {s['label']} ({s['label_name']}): {s['count']} stops, "
-              f"avg {s['avg_passengers']} pax, {s['avg_occupancy']}% occ")
+    df["Cluster"] = kmeans.fit_predict(
+        X_scaled
+    )
 
-    # Scatter (saved)
-    plt.figure()
-    plt.scatter(df["Avg_Passenger_Count"], df["Avg_Occupancy_Percentage"], c=df["Cluster"])
-    plt.xlabel("Average Passenger Count")
-    plt.ylabel("Average Occupancy Percentage")
-    plt.title("Bus Stop Clusters")
-    plt.tight_layout()
-    plt.savefig(HERE / "clusters.png", dpi=120)
-    plt.close()
+
+    # -----------------------------------------------------
+    # Display cluster distribution
+    # -----------------------------------------------------
+
+    print("\nCluster distribution:")
+
+    print(
+        df["Cluster"]
+        .value_counts()
+        .sort_index()
+    )
+
+
+    # -----------------------------------------------------
+    # Save clustering model
+    # -----------------------------------------------------
+
+    model_path = ARTIFACTS / "clustering.joblib"
 
     joblib.dump(
-        {"scaler": scaler, "kmeans": kmeans, "pca": pca,
-         "features": FEATURES, "label_map": label_map},
-        ARTIFACTS / "clusters.joblib",
+        {
+            "model": kmeans,
+            "scaler": scaler,
+            "features": FEATURES
+        },
+        model_path
     )
-    (ARTIFACTS / "clusters.json").write_text(json.dumps({
-        "features": FEATURES,
-        "n_clusters": N_CLUSTERS,
-        "silhouette": score,
-        "summary": summary,
-        "stops": stops,
-    }, indent=2))
-    print(f"\nSaved clusters.joblib, clusters.json -> {ARTIFACTS}")
 
+
+    # -----------------------------------------------------
+    # Save cluster results
+    # -----------------------------------------------------
+
+    results = df[
+        ["Stop_ID"] + FEATURES + ["Cluster"]
+    ].copy()
+
+    results_path = (
+        ARTIFACTS /
+        "cluster_results.csv"
+    )
+
+    results.to_csv(
+        results_path,
+        index=False
+    )
+
+
+    # -----------------------------------------------------
+    # Save metadata
+    # -----------------------------------------------------
+
+    metadata = {
+        "features": FEATURES,
+        "n_clusters": int(best_k),
+        "silhouette_score": float(best_score),
+        "trained_stops": int(len(df)),
+        "clusters": sorted(
+            df["Cluster"]
+            .unique()
+            .tolist()
+        )
+    }
+
+    metadata_path = (
+        ARTIFACTS /
+        "clustering_meta.json"
+    )
+
+    metadata_path.write_text(
+        json.dumps(
+            metadata,
+            indent=2
+        )
+    )
+
+
+    # -----------------------------------------------------
+    # Done
+    # -----------------------------------------------------
+
+    print("\n" + "=" * 70)
+    print("Bus Stop Clustering completed successfully!")
+    print("=" * 70)
+
+    print("\nSaved model:")
+    print(model_path)
+
+    print("\nSaved cluster results:")
+    print(results_path)
+
+    print("\nSaved metadata:")
+    print(metadata_path)
+
+
+# ---------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------
 
 if __name__ == "__main__":
     main()

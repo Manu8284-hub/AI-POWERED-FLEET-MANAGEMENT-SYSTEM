@@ -19,5 +19,7 @@ demand_model/*.png
 occupancy_model/*.png
 Bus_Stop_Clustering_Model/*.png
 
+
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
+.claude/

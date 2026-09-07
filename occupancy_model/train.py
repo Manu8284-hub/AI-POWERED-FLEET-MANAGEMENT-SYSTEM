@@ -1,18 +1,17 @@
-"""Occupancy model — classifies a trip's load as LOW / MEDIUM / HIGH.
+"""
+Occupancy Model
 
-The original script here only explored the 108-row occupancy file (one day,
-all peak-hour), which is far too thin to train on. We keep that exploration
-(headless) for reference, then train a Random Forest CLASSIFIER on the rich
-5000-row demand dataset so the model can respond to Day and Weather — which is
-what lets the dashboard's occupancy panel stay in sync with the chosen context.
+Classifies a trip's load as LOW / MEDIUM / HIGH.
+
+This model uses the single master dataset:
+    fleet_master_combined_dataset.xlsx
+
+The model predicts Occupancy_Category using route, stop, day,
+weather, and bus capacity information.
 """
 
 import json
 from pathlib import Path
-
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 import pandas as pd
 import joblib
@@ -24,87 +23,290 @@ from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 
+
+# ---------------------------------------------------------
+# Paths
+# ---------------------------------------------------------
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+
 ARTIFACTS = ROOT / "backend" / "artifacts"
 ARTIFACTS.mkdir(parents=True, exist_ok=True)
 
-# Same feature contract as the demand model (Peak_Hour dropped — constant).
-CATEGORICAL = ["Route_ID", "Stop_ID", "Day", "Weather"]
-NUMERICAL = ["Bus_Capacity"]
+
+# ---------------------------------------------------------
+# Features
+# ---------------------------------------------------------
+
+CATEGORICAL = [
+    "Route_ID",
+    "Stop_ID",
+    "Day",
+    "Weather"
+]
+
+NUMERICAL = [
+    "Bus_Capacity"
+]
+
 FEATURES = CATEGORICAL + NUMERICAL
+
 TARGET = "Occupancy_Category"
-CLASS_ORDER = ["LOW", "MEDIUM", "HIGH"]
+
+CLASS_ORDER = [
+    "LOW",
+    "MEDIUM",
+    "HIGH"
+]
 
 
-def explore_reference_file():
-    """Original EDA on the small occupancy file (kept, made headless)."""
-    df = pd.read_excel(HERE / "occupancy_synthetic_dataset_routes_1_to_127.xlsx")
-    print(df.head())
-    print(df.shape)
-    print(list(df.columns))
-    print("\nMissing values:\n", df.isnull().sum())
-    print("\nOccupancy_Category counts:\n", df["Occupancy_Category"].value_counts())
-
-    ax = df["Occupancy_Category"].value_counts().plot(kind="bar")
-    ax.set_xlabel("Occupancy Category")
-    ax.set_ylabel("Number of Records")
-    ax.set_title("Occupancy Category Distribution (reference file)")
-    plt.tight_layout()
-    plt.savefig(HERE / "occupancy_distribution.png", dpi=120)
-    plt.close()
-
+# ---------------------------------------------------------
+# Main training function
+# ---------------------------------------------------------
 
 def main():
-    explore_reference_file()
 
-    # Train on the larger demand dataset (has day/weather variety).
-    df = pd.read_excel(ROOT / "demand_model" / "AI_Fleet_Demand_Dataset_5000.xlsx")
-    df["Route_ID"] = df["Route_ID"].astype(int)
-    df[TARGET] = df[TARGET].astype(str).str.strip().str.upper()
+    # -----------------------------------------------------
+    # Load the single master dataset
+    # -----------------------------------------------------
+
+    dataset_path = ROOT / "fleet_master_combined_dataset.xlsx"
+
+    print("=" * 70)
+    print("Loading master fleet dataset")
+    print("=" * 70)
+    print(f"Dataset: {dataset_path}")
+
+    df = pd.read_excel(dataset_path)
+
+    print(f"\nDataset shape: {df.shape}")
+    print(f"Rows: {len(df)}")
+
+
+    # -----------------------------------------------------
+    # Basic data preparation
+    # -----------------------------------------------------
+
+    df["Route_ID"] = df["Route_ID"].astype(str).str.strip()
+    df["Stop_ID"] = df["Stop_ID"].astype(str).str.strip()
+
+    df["Day"] = df["Day"].astype(str).str.strip()
+    df["Weather"] = df["Weather"].astype(str).str.strip()
+
+    df[TARGET] = (
+        df[TARGET]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+
+    # -----------------------------------------------------
+    # Check required columns
+    # -----------------------------------------------------
+
+    required_columns = FEATURES + [TARGET]
+
+    missing_columns = [
+        column for column in required_columns
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing required columns: {missing_columns}"
+        )
+
+
+    # -----------------------------------------------------
+    # Remove rows with missing required values
+    # -----------------------------------------------------
+
+    df = df.dropna(subset=required_columns).copy()
+
+    print(f"Rows after cleaning: {len(df)}")
+
+
+    # -----------------------------------------------------
+    # Features and target
+    # -----------------------------------------------------
 
     X = df[FEATURES]
     y = df[TARGET]
-    print("\nTraining occupancy classifier on", len(df), "rows")
-    print("Class balance:\n", y.value_counts())
+
+    print("\nFeatures:")
+    print(FEATURES)
+
+    print("\nTarget:")
+    print(TARGET)
+
+    print("\nClass balance:")
+    print(y.value_counts())
+
+
+    # -----------------------------------------------------
+    # Preprocessing
+    # -----------------------------------------------------
 
     preprocessor = ColumnTransformer(
         transformers=[
-            ("categorical", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CATEGORICAL),
-            ("numerical", "passthrough", NUMERICAL),
+            (
+                "categorical",
+                OneHotEncoder(
+                    handle_unknown="ignore",
+                    sparse_output=False
+                ),
+                CATEGORICAL
+            ),
+            (
+                "numerical",
+                "passthrough",
+                NUMERICAL
+            )
         ]
     )
 
+
+    # -----------------------------------------------------
+    # Train / Test split
+    # -----------------------------------------------------
+
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+        stratify=y
     )
 
+    print("\nTraining rows:", len(X_train))
+    print("Testing rows:", len(X_test))
+
+
+    # -----------------------------------------------------
+    # Random Forest Classifier
+    # -----------------------------------------------------
+
     clf = Pipeline([
-        ("preprocessor", preprocessor),
-        ("model", RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)),
+        (
+            "preprocessor",
+            preprocessor
+        ),
+        (
+            "model",
+            RandomForestClassifier(
+                n_estimators=100,
+                random_state=42,
+                n_jobs=-1
+            )
+        )
     ])
+
+
+    # -----------------------------------------------------
+    # Train model
+    # -----------------------------------------------------
+
+    print("\nTraining occupancy classifier...")
+
     clf.fit(X_train, y_train)
+
+
+    # -----------------------------------------------------
+    # Prediction
+    # -----------------------------------------------------
+
     pred = clf.predict(X_test)
 
-    acc = accuracy_score(y_test, pred)
-    report = classification_report(y_test, pred, output_dict=True, zero_division=0)
-    print(f"\nOccupancy classifier accuracy: {acc:.4f}")
-    print(classification_report(y_test, pred, zero_division=0))
 
-    joblib.dump(clf, ARTIFACTS / "occupancy.joblib")
-    (ARTIFACTS / "occupancy_meta.json").write_text(json.dumps({
+    # -----------------------------------------------------
+    # Evaluation
+    # -----------------------------------------------------
+
+    acc = accuracy_score(y_test, pred)
+
+    report = classification_report(
+        y_test,
+        pred,
+        output_dict=True,
+        zero_division=0
+    )
+
+    print("\n" + "=" * 70)
+    print("OCCUPANCY MODEL RESULTS")
+    print("=" * 70)
+
+    print(f"\nAccuracy: {acc:.4f}")
+
+    print("\nClassification Report:")
+    print(
+        classification_report(
+            y_test,
+            pred,
+            zero_division=0
+        )
+    )
+
+
+    # -----------------------------------------------------
+    # Save trained model
+    # -----------------------------------------------------
+
+    model_path = ARTIFACTS / "occupancy.joblib"
+
+    joblib.dump(
+        clf,
+        model_path
+    )
+
+
+    # -----------------------------------------------------
+    # Save model metadata
+    # -----------------------------------------------------
+
+    metadata = {
         "target": TARGET,
         "features": FEATURES,
         "categorical": CATEGORICAL,
         "numerical": NUMERICAL,
-        "classes": list(clf.named_steps["model"].classes_),
+        "classes": list(
+            clf.named_steps["model"].classes_
+        ),
         "class_order": CLASS_ORDER,
         "trained_rows": int(len(df)),
         "accuracy": float(acc),
-        "report": report,
-    }, indent=2))
-    print(f"\nSaved occupancy.joblib, occupancy_meta.json -> {ARTIFACTS}")
+        "report": report
+    }
 
+    metadata_path = ARTIFACTS / "occupancy_meta.json"
+
+    metadata_path.write_text(
+        json.dumps(
+            metadata,
+            indent=2
+        )
+    )
+
+
+    # -----------------------------------------------------
+    # Done
+    # -----------------------------------------------------
+
+    print("\n" + "=" * 70)
+    print("Occupancy model training completed successfully!")
+    print("=" * 70)
+
+    print(f"\nSaved model:")
+    print(model_path)
+
+    print("\nSaved metadata:")
+    print(metadata_path)
+
+
+# ---------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------
 
 if __name__ == "__main__":
     main()
